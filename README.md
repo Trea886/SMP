@@ -1,6 +1,5 @@
 # SMP
 
-蔺庆祥
 
 ## Getting started
 
