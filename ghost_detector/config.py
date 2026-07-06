@@ -15,7 +15,8 @@ LCD_PORTRAIT = 1        # 竖屏模式
 # ==================== 阈值设置 ====================
 # 传感器变化率阈值（超过这个值就算"异常"）
 TEMP_DELTA_THRESHOLD = 0.3      # 温度变化率阈值 (°C/s)
-LIGHT_DELTA_THRESHOLD = 200     # 光照波动阈值 (ADC 值)
+LIGHT_DELTA_THRESHOLD = 60      # 光照波动阈值 (ADC 值)，降到60，稍微遮光就能触发
+LIGHT_BASELINE = 3400           # 环境光基准值（有光状态下的读数）
 
 # ==================== WiFi / MQTT（暂时不用）====================
 WIFI_SSID = 'iPhone'

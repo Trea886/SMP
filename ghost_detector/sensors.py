@@ -24,12 +24,25 @@ pir = Pin(6, Pin.IN)
 
 def read_temperature():
     """
-    读取板载温度（华氏度转摄氏度）
-    返回: 温度值 °C
+    读取板载温度
+    返回: 温度值 °C（如果读不到返回 25°C 兜底）
     """
-    f = esp32.raw_temperature()  # 华氏度
-    c = (f - 32) / 1.8            # 转摄氏度
-    return c
+    # 方法1: esp32.raw_temperature()（部分固件支持）
+    try:
+        f = esp32.raw_temperature()
+        return (f - 32) / 1.8
+    except AttributeError:
+        pass
+
+    # 方法2: esp32.mcu_temperature()（另一个可能的 API）
+    try:
+        f = esp32.mcu_temperature()
+        return (f - 32) / 1.8
+    except AttributeError:
+        pass
+
+    # 都读不到就用 25°C 兜底，不影响红外和光敏正常工作
+    return 25.0
 
 
 def read_light():
