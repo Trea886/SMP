@@ -68,8 +68,8 @@ class GhostDetector:
         else:
             self.message = detect_text(weird)
 
-        # 如果是警告及以上，记录到日志
-        if self.level >= 2:
+        # 所有异常事件都记录到日志
+        if self.level >= 1:
             import time
             t = time.localtime()
             timestamp = "{:02d}:{:02d}:{:02d}".format(t[3], t[4], t[5])
