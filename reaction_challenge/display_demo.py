@@ -10,6 +10,16 @@ Copy to ESP32 as main.py, or:
 
 from tftlcd import LCD24
 import time
+import _thread
+
+# MQTT (optional - game works without it)
+try:
+    from mqtt_handler import upload_score
+    _has_mqtt = True
+    print('[OK] MQTT module loaded')
+except ImportError:
+    _has_mqtt = False
+    print('[WARN] mqtt_handler.py not found, playing offline')
 
 # ==================== Colors ====================
 BLACK   = (0, 0, 0)
@@ -65,7 +75,9 @@ def page_title(ticks, first):
         line(40, 155, 200, 155, DIM)
         putc('Press Button or Wave', 200, WHITE, size=1)
         putc('to Start', 225, DIM, size=1)
-        put('v0.1  MQTT OK', 10, 295, GREEN, size=1)
+        mqtt_ok = _has_mqtt
+        put('v0.1  MQTT' + (' OK' if mqtt_ok else ' ---'), 10, 295,
+            GREEN if mqtt_ok else DIM, size=1)
 
     # 闪电闪烁
     c = YELLOW if ticks % 5 < 3 else DARK_BG
@@ -176,7 +188,7 @@ def page_gaming(sim, first):
 
 def page_result(sim, first):
     if not first:
-        return  # 静态页，画一次就行
+        return
 
     lcd.fill(DARK_BG)
 
@@ -202,8 +214,21 @@ def page_result(sim, first):
     rank = sim.get('rank', 3)
     putc('RANK: #{}'.format(rank), 235, YELLOW, size=2)
 
-    putc('Score Uploaded!' if sim.get('uploaded') else 'Uploading...',
-         270, GREEN if sim.get('uploaded') else DIM, size=1)
+    # MQTT upload
+    uploaded = False
+    if _has_mqtt:
+        uploaded = upload_score(
+            sim['score'],
+            mode='gesture',
+            combo=sim.get('max_combo', 0),
+            avg_ms=int(sim.get('avg_reaction', 0.34) * 1000),
+            questions=sim['q_num'] - 1
+        )
+
+    if uploaded:
+        putc('Score Uploaded!', 270, GREEN, size=1)
+    else:
+        putc('Offline (score saved)', 270, DIM, size=1)
 
     put('Wave: Retry', 5, 298, DIM, size=1)
     put('Back: Menu',  145, 298, DIM, size=1)
@@ -220,7 +245,6 @@ def simulate(phase, ticks):
             'avg_reaction': 0.28 + (ticks % 3) * 0.05,
             'rank': max(1, 3 - (ticks // 30) % 3),
             'new_record': (ticks // 30) % 3 == 0,
-            'uploaded': ticks > 15,
         }
 
     if phase == 'gaming':
@@ -246,6 +270,18 @@ def simulate(phase, ticks):
     return None
 
 
+# ==================== MQTT Init (background) ====================
+
+def _mqtt_init():
+    """Run in a thread at boot - connect WiFi + MQTT"""
+    try:
+        from mqtt_handler import connect_wifi, connect_mqtt
+        if connect_wifi():
+            connect_mqtt()
+    except:
+        pass  # Offline is OK
+
+
 # ==================== Main ====================
 
 def run():
@@ -259,7 +295,15 @@ def run():
 
     print('========================================')
     print('  Reaction Challenge - LCD UI Demo')
+    print('  MQTT: {}'.format('YES' if _has_mqtt else 'NO'))
     print('========================================')
+
+    # Start WiFi/MQTT connection in background (non-blocking)
+    if _has_mqtt:
+        try:
+            _thread.start_new_thread(_mqtt_init, ())
+        except:
+            pass
 
     while True:
         sim = simulate(phase, t)
