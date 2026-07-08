@@ -52,11 +52,8 @@ def printChinese(text, x, y, color=WHITE, backcolor=None, size=2):
     dict_map = {
         1: fonts.hanzi_16x16_dict,
         2: fonts.hanzi_24x24_dict,
-        3: fonts.hanzi_32x32_dict,
-        4: fonts.hanzi_40x40_dict,
-        5: fonts.hanzi_48x48_dict,
     }
-    chinese_dict = dict_map.get(size) if size in dict_map else dict_map[2]
+    chinese_dict = dict_map.get(size, fonts.hanzi_16x16_dict)
 
     px = FONT_SIZES[size]
 
