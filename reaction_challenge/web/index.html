@@ -74,6 +74,25 @@
   .ps{font-size:24px;font-weight:900;color:#0ff;text-shadow:0 0 8px rgba(0,255,255,.3)}
   .pcb{font-size:10px;color:#f0f;font-weight:700;letter-spacing:1px}
 
+  /* ===== Player Name Input ===== */
+  .player-box{display:flex;gap:4px;align-items:center}
+  .player-input{
+    flex:1;padding:8px 12px;
+    background:rgba(0,0,0,.5);border:1px solid rgba(0,255,255,.15);
+    color:#0ff;font-family:inherit;font-size:12px;letter-spacing:1px;
+    outline:none;transition:border-color .2s;
+  }
+  .player-input:focus{border-color:rgba(0,255,255,.4)}
+  .player-input::placeholder{color:#333}
+  .btn-player{
+    padding:8px 14px;border:1px solid rgba(0,255,255,.25);
+    background:rgba(0,255,255,.05);color:#0ff;
+    font-family:inherit;font-size:11px;font-weight:700;letter-spacing:1px;
+    cursor:pointer;transition:all .2s;
+  }
+  .btn-player:hover{background:rgba(0,255,255,.1)}
+  .player-name{font-size:10px;color:rgba(0,255,255,.3);text-align:center;margin-top:4px;letter-spacing:1px}
+
   /* ===== Buttons ===== */
   .btns{display:flex;gap:6px;flex-wrap:wrap}
   .btn{flex:1;min-width:60px;padding:12px 6px;border:1px solid #222;background:rgba(0,0,0,.4);font-family:inherit;font-size:12px;font-weight:700;letter-spacing:1px;cursor:pointer;transition:all .2s;color:#888}
@@ -160,6 +179,13 @@
   <div class="sec">PODIUM · 领奖台</div>
   <div class="podium" id="podium"><div style="text-align:center;padding:24px;flex:1;color:#444">AWAITING...</div></div>
 
+  <div class="sec">PLAYER · 玩家</div>
+  <div class="player-box">
+    <input class="player-input" id="playerInput" placeholder="输入你的名字..." maxlength="12" onkeydown="if(event.key==='Enter')setPlayer()">
+    <button class="btn-player" onclick="setPlayer()">确认</button>
+  </div>
+  <div class="player-name" id="playerLabel">未设置玩家名</div>
+
   <div class="sec">REMOTE CONTROL · 远程控制</div>
   <div class="btns">
     <button class="btn btn-g" onclick="sendCmd('gesture')">GESTURE 手势</button>
@@ -188,7 +214,7 @@
 
 <script>
 // ==================== MQTT ====================
-const TS='/reaction/score',TC='/reaction/control';
+const TS='/reaction/score',TC='/reaction/control',TP='/reaction/player';
 const WS=['wss://broker.emqx.io:8084/mqtt','ws://broker.emqx.io:8083/mqtt'];
 let scores=[],mode='all',devs=new Set(),cli,topScore=0,ui=0;
 const $=id=>document.getElementById(id);
@@ -260,6 +286,17 @@ document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{
 function sendCmd(cmd){
   if(!cli||!cli.connected){showToast('NO CONNECTION');return}
   cli.publish(TC,JSON.stringify({cmd}));
+}
+
+function setPlayer(){
+  const inp=document.getElementById('playerInput');
+  const name=inp.value.trim();
+  if(!name){showToast('请输入名字');return}
+  if(!cli||!cli.connected){showToast('MQTT 未连接');return}
+  cli.publish(TP,JSON.stringify({name}));
+  document.getElementById('playerLabel').textContent='当前玩家: '+name;
+  showToast('玩家名已发送: '+name);
+  inp.value='';
 }
 
 function injectDemo(){

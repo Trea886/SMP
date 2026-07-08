@@ -15,14 +15,19 @@ MQTT_PORT  = 1883
 CLIENT_ID  = 'ESP32_Reaction'
 TOPIC_SCORE   = '/reaction/score'
 TOPIC_CONTROL = '/reaction/control'
+TOPIC_PLAYER  = '/reaction/player'
 
 # ==================== State ====================
 wlan = None
 client = None
 connected = False
+current_player = ''
 
 # Command queue from web
 _commands = []
+
+# Player name queue
+_player_name = None
 
 # ==================== WiFi ====================
 
@@ -54,12 +59,30 @@ def connect_wifi():
 
 # ==================== MQTT ====================
 
-def _on_control_msg(topic, msg):
-    """Callback: web sent a command"""
+def _on_mqtt_msg(topic, msg):
+    """Callback: handles both control commands and player name"""
+    global current_player, _player_name
     try:
-        cmd = msg.decode('utf-8')
-        _commands.append(cmd)
-        print('[MQTT] Received command:', cmd)
+        t = topic.decode('utf-8')
+        data = msg.decode('utf-8')
+
+        if t == TOPIC_PLAYER:
+            # Player name from web
+            if '"name"' in data:
+                # Extract name from '{"name":"xxx"}'
+                start = data.find('"name":"') + 8
+                end = data.find('"', start)
+                if end > start:
+                    current_player = data[start:end]
+                    _player_name = current_player
+                    print('[MQTT] Player name set:', current_player)
+            else:
+                current_player = data.strip().strip('"')
+                _player_name = current_player
+                print('[MQTT] Player name set:', current_player)
+        elif t == TOPIC_CONTROL:
+            _commands.append(data)
+            print('[MQTT] Received command:', data)
     except:
         pass
 
@@ -73,9 +96,10 @@ def connect_mqtt():
 
     try:
         client = MQTTClient(CLIENT_ID, MQTT_HOST, MQTT_PORT)
-        client.set_callback(_on_control_msg)
+        client.set_callback(_on_mqtt_msg)
         client.connect()
         client.subscribe(TOPIC_CONTROL)
+        client.subscribe(TOPIC_PLAYER)
         connected = True
         print('[MQTT] Connected to', MQTT_HOST)
         return True
@@ -95,8 +119,9 @@ def upload_score(score, mode='gesture', combo=0, avg_ms=0, questions=0):
             return False
 
     try:
+        name = current_player if current_player else CLIENT_ID
         payload = '{{"device":"{}","score":{},"mode":"{}","combo":{},"avg_ms":{},"questions":{}}}'.format(
-            CLIENT_ID, score, mode, combo, avg_ms, questions
+            name, score, mode, combo, avg_ms, questions
         )
         client.publish(TOPIC_SCORE, payload)
         print('[MQTT] Published:', payload)
@@ -105,6 +130,18 @@ def upload_score(score, mode='gesture', combo=0, avg_ms=0, questions=0):
         print('[MQTT] Publish failed:', e)
         connected = False
         return False
+
+
+# ==================== Player Name ====================
+
+def get_player():
+    """Return current player name, or empty string if not set"""
+    global _player_name
+    if _player_name:
+        name = _player_name
+        _player_name = None  # consume it
+        return name
+    return current_player if current_player else ''
 
 
 # ==================== Incoming commands ====================
