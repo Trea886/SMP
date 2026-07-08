@@ -236,7 +236,12 @@ def page_result(sim, first):
 
 # ==================== Simulator ====================
 
+_gaming_q_start = 0
+_gaming_q_idx   = -1
+
 def simulate(phase, ticks):
+    global _gaming_q_start, _gaming_q_idx
+
     if phase == 'result':
         return {
             'score': 147 + (ticks // 30) * 5,
@@ -253,12 +258,17 @@ def simulate(phase, ticks):
         combo = min(12, q % 8)
         timeout = max(700, 2000 - (q // 5) * 200)
 
+        # 新题目开始 → 记录真实时钟起始点
+        if qc != _gaming_q_idx:
+            _gaming_q_start = time.ticks_ms()
+            _gaming_q_idx = qc
+
         return {
             'score': q * 10 + combo * 5,
             'q_num': q,
             'direction': DIRS[(q + qc) % 4],
             'trap': q >= 12 and (qc % 3 == 0),
-            'deadline': time.ticks_ms() + timeout - (ticks % 10) * 100,
+            'deadline': _gaming_q_start + timeout,
             'timeout': timeout,
             'combo': combo,
             'difficulty': min(5, 1 + q // 5),
