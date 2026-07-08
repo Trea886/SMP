@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Reaction Challenge - Leaderboard</title>
+<title>反应挑战机 - 全球排行榜</title>
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <style>
   :root {
@@ -91,6 +91,48 @@
     background: var(--accent);
     color: #fff;
     font-weight: 600;
+  }
+
+  /* Control Panel */
+  .control {
+    background: var(--card);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 16px;
+  }
+  .control .title {
+    font-size: 12px;
+    color: var(--dim);
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .control .btn-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .control button {
+    flex: 1;
+    min-width: 80px;
+    padding: 10px 6px;
+    border: none;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .control button:active { transform: scale(0.95); }
+  .btn-gesture { background: #ffd700; color: #1a1a00; }
+  .btn-sonic   { background: #00e676; color: #002200; }
+  .btn-combo   { background: #ff9100; color: #1a0800; }
+  .btn-back    { background: transparent; border: 1px solid var(--dim) !important; color: var(--dim); font-size: 11px !important; }
+  .control .hint {
+    font-size: 10px;
+    color: var(--dim);
+    margin-top: 10px;
+    text-align: center;
   }
 
   /* Online count */
@@ -189,33 +231,45 @@
 <body>
 <div class="container">
   <header>
-    <h1>Reaction Challenge</h1>
-    <div class="sub">Global Leaderboard</div>
+    <h1>反应挑战机</h1>
+    <div class="sub">全球排行榜</div>
   </header>
 
   <div class="status">
     <div class="dot" id="statusDot"></div>
-    <span id="statusText">Connecting...</span>
+    <span id="statusText">连接中...</span>
+  </div>
+
+  <!-- Remote Control -->
+  <div class="control">
+    <div class="title">远程控制 - 选择模式</div>
+    <div class="btn-row">
+      <button class="btn-gesture" onclick="sendCmd('gesture')">手势闪电</button>
+      <button class="btn-sonic"   onclick="sendCmd('sonic')">超声波快拍</button>
+      <button class="btn-combo"   onclick="sendCmd('combo')">连击挑战</button>
+      <button class="btn-back"    onclick="sendCmd('back')">返回菜单</button>
+    </div>
+    <div class="hint">点击按钮远程控制 ESP32 游戏机</div>
   </div>
 
   <div class="tabs">
-    <button data-mode="all" class="active">All</button>
-    <button data-mode="gesture">Gesture</button>
-    <button data-mode="sonic">Sonic</button>
-    <button data-mode="combo">Combo</button>
+    <button data-mode="all" class="active">全部</button>
+    <button data-mode="gesture">手势闪电</button>
+    <button data-mode="sonic">超声波快拍</button>
+    <button data-mode="combo">连击挑战</button>
   </div>
 
   <div class="online-count" id="onlineCount">--</div>
 
   <div class="board" id="board">
-    <div class="empty">Waiting for scores...</div>
+    <div class="empty">等待分数中...</div>
   </div>
 
   <div class="stats">
-    <div>Games<br><strong id="statGames">0</strong></div>
-    <div>Top Score<br><strong id="statTop">0</strong></div>
-    <div>Best Combo<br><strong id="statCombo">0</strong></div>
-    <div>Devices<br><strong id="statDevices">0</strong></div>
+    <div>总场次<br><strong id="statGames">0</strong></div>
+    <div>最高分<br><strong id="statTop">0</strong></div>
+    <div>最高连击<br><strong id="statCombo">0</strong></div>
+    <div>设备数<br><strong id="statDevices">0</strong></div>
   </div>
 </div>
 
@@ -223,7 +277,8 @@
 // ==================== MQTT ====================
 const BROKER = 'broker.emqx.io';
 const WS_PORT = 8084;
-const TOPIC = '/reaction/score';
+const TOPIC_SCORE   = '/reaction/score';
+const TOPIC_CONTROL = '/reaction/control';
 
 let allScores = [];
 let filterMode = 'all';
@@ -245,12 +300,12 @@ let client;
 
 function tryConnect() {
   if (urlIdx >= WS_URLS.length) {
-    statusText.textContent = 'All failed - check network';
+    statusText.textContent = '连接失败 - 请检查网络';
     return;
   }
   const url = WS_URLS[urlIdx];
   console.log('Trying:', url);
-  statusText.textContent = 'Trying ' + url.split('://')[1].split('/')[0] + '...';
+  statusText.textContent = '尝试连接 ' + url.split('://')[1].split('/')[0] + '...';
 
   client = mqtt.connect(url, {
     clientId: 'web_lb_' + Math.random().toString(36).slice(2, 8),
@@ -261,8 +316,8 @@ function tryConnect() {
 
   client.on('connect', () => {
     statusDot.classList.add('live');
-    statusText.textContent = 'Live (' + url.split('://')[1].split('/')[0] + ')';
-    client.subscribe(TOPIC, { qos: 0 });
+    statusText.textContent = '已连接 (' + url.split('://')[1].split('/')[0] + ')';
+    client.subscribe(TOPIC_SCORE, { qos: 0 });
   });
 
   client.on('error', (err) => {
@@ -273,7 +328,7 @@ function tryConnect() {
 
   client.on('close', () => {
     statusDot.classList.remove('live');
-    statusText.textContent = 'Reconnecting...';
+    statusText.textContent = '重连中...';
   });
 
   client.on('message', (topic, payload) => {
@@ -321,10 +376,10 @@ function render() {
       else if (rank === 2) rankClass = 'silver top-2';
       else if (rank === 3) rankClass = 'bronze top-3';
 
-      const modeName = { gesture: 'Gesture', sonic: 'Sonic', combo: 'Combo' }[s.mode] || s.mode;
+      const modeName = { gesture: '手势闪电', sonic: '超声波快拍', combo: '连击挑战' }[s.mode] || s.mode;
       const timeAgo = Math.floor((Date.now() - s._time) / 1000);
-      const agoStr = timeAgo < 60 ? `${timeAgo}s ago` :
-                     timeAgo < 3600 ? `${Math.floor(timeAgo/60)}m ago` : '---';
+      const agoStr = timeAgo < 60 ? timeAgo + '秒前' :
+                     timeAgo < 3600 ? Math.floor(timeAgo/60) + '分钟前' : '---';
 
       return `
         <div class="row ${rank <= 3 ? 'top-' + rank : ''}">
@@ -347,7 +402,7 @@ function render() {
   document.getElementById('statCombo').textContent = board.length
     ? Math.max(...board.map(s => s.combo || 0)) : 0;
   document.getElementById('statDevices').textContent = deviceSet.size;
-  onlineEl.textContent = `${deviceSet.size} devices &middot; ${allScores.length} games played`;
+  onlineEl.textContent = deviceSet.size + ' 台设备 &middot; ' + allScores.length + ' 场游戏';
 }
 
 function esc(s) {
@@ -365,6 +420,24 @@ document.querySelectorAll('.tabs button').forEach(btn => {
     render();
   });
 });
+
+// ==================== Remote Control ====================
+
+function sendCmd(cmd) {
+  if (!client || !client.connected) {
+    alert('MQTT 未连接，请检查网络状态');
+    return;
+  }
+  const payload = JSON.stringify({ cmd: cmd });
+  client.publish(TOPIC_CONTROL, payload);
+  console.log('Sent:', payload);
+
+  // Brief flash feedback on all buttons
+  document.querySelectorAll('.control button').forEach(b => b.style.opacity = '0.5');
+  setTimeout(() => {
+    document.querySelectorAll('.control button').forEach(b => b.style.opacity = '1');
+  }, 200);
+}
 
 // Periodic refresh for "x min ago"
 setInterval(render, 10000);

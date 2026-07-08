@@ -14,11 +14,13 @@ import _thread
 
 # MQTT (optional - game works without it)
 try:
-    from mqtt_handler import upload_score
+    from mqtt_handler import upload_score, check_command
     _has_mqtt = True
     print('[OK] MQTT module loaded')
 except ImportError:
     _has_mqtt = False
+    check_command = None
+    upload_score = None
     print('[WARN] mqtt_handler.py not found, playing offline')
 
 # ==================== Colors ====================
@@ -316,6 +318,36 @@ def run():
             pass
 
     while True:
+        # ---- Check for web remote commands ----
+        cmd = None
+        if _has_mqtt:
+            try:
+                raw = check_command()
+                if raw:
+                    # Web sends '{"cmd":"gesture"}', extract the value
+                    if '"gesture"' in raw:    cmd = 'gesture'
+                    elif '"sonic"' in raw:    cmd = 'sonic'
+                    elif '"combo"' in raw:    cmd = 'combo'
+                    elif '"back"' in raw:     cmd = 'back'
+                    print('[CMD] Web remote:', cmd)
+            except:
+                pass
+
+        # ---- Handle command ----
+        if cmd == 'gesture':
+            phase = 'gaming'
+            t = 0; first = True
+        elif cmd == 'sonic':
+            phase = 'gaming'
+            t = 0; first = True
+        elif cmd == 'combo':
+            phase = 'gaming'
+            t = 0; first = True
+        elif cmd == 'back':
+            phase = 'title'
+            idx = 0; t = 0; first = True
+
+        # ---- Render current phase ----
         sim = simulate(phase, t)
 
         if phase == 'title':
@@ -332,7 +364,8 @@ def run():
         time.sleep_ms(100)
         t += 1
 
-        if t >= DUR[phase]:
+        # Auto-cycle only if no web command received
+        if cmd is None and t >= DUR[phase]:
             idx = (idx + 1) % 4
             phase = ORDER[idx]
             t = 0

@@ -1,6 +1,6 @@
 """
-Reaction Challenge - MQTT Score Upload
-WiFi + MQTT connection, publish scores to broker
+Reaction Challenge - MQTT Score Upload + Remote Control
+WiFi + MQTT connection, publish scores, receive web commands
 """
 
 import network
@@ -13,12 +13,16 @@ WIFI_PASS  = '7878789191'
 MQTT_HOST  = 'broker.emqx.io'
 MQTT_PORT  = 1883
 CLIENT_ID  = 'ESP32_Reaction'
-TOPIC      = '/reaction/score'
+TOPIC_SCORE   = '/reaction/score'
+TOPIC_CONTROL = '/reaction/control'
 
 # ==================== State ====================
 wlan = None
 client = None
 connected = False
+
+# Command queue from web
+_commands = []
 
 # ==================== WiFi ====================
 
@@ -50,6 +54,15 @@ def connect_wifi():
 
 # ==================== MQTT ====================
 
+def _on_control_msg(topic, msg):
+    """Callback: web sent a command"""
+    try:
+        cmd = msg.decode('utf-8')
+        _commands.append(cmd)
+        print('[MQTT] Received command:', cmd)
+    except:
+        pass
+
 def connect_mqtt():
     global client, connected
 
@@ -60,7 +73,9 @@ def connect_mqtt():
 
     try:
         client = MQTTClient(CLIENT_ID, MQTT_HOST, MQTT_PORT)
+        client.set_callback(_on_control_msg)
         client.connect()
+        client.subscribe(TOPIC_CONTROL)
         connected = True
         print('[MQTT] Connected to', MQTT_HOST)
         return True
@@ -73,38 +88,48 @@ def connect_mqtt():
 # ==================== Publish ====================
 
 def upload_score(score, mode='gesture', combo=0, avg_ms=0, questions=0):
-    """
-    Upload game result to MQTT broker.
-    Returns True on success, False on failure.
-    Game never crashes from network errors.
-    """
     global client, connected
 
-    # Auto-connect if needed
     if not connected:
         if not connect_mqtt():
             return False
 
     try:
-        # Build JSON payload
         payload = '{{"device":"{}","score":{},"mode":"{}","combo":{},"avg_ms":{},"questions":{}}}'.format(
             CLIENT_ID, score, mode, combo, avg_ms, questions
         )
-
-        client.publish(TOPIC, payload)
+        client.publish(TOPIC_SCORE, payload)
         print('[MQTT] Published:', payload)
         return True
-
     except Exception as e:
         print('[MQTT] Publish failed:', e)
         connected = False
         return False
 
 
+# ==================== Incoming commands ====================
+
+def check_command():
+    """
+    Non-blocking check: returns the oldest pending command, or None.
+    Call this once per main loop tick.
+    """
+    global client
+    # Check for incoming MQTT messages
+    if client and connected:
+        try:
+            client.check_msg()
+        except:
+            pass
+
+    if _commands:
+        return _commands.pop(0)
+    return None
+
+
 # ==================== Init ====================
 
 def start():
-    """Call at boot to set up connections in background"""
     try:
         connect_wifi()
         connect_mqtt()
