@@ -137,8 +137,8 @@ def putc(text, y, color, size=2):
 def page_title(ticks, first):
     if first:
         lcd.fill(DARK_BG)
-        putcCN('反应', 65, WHITE, size=2)
-        putcCN('挑战', 110, CYAN, size=1)
+        putcCN('反应', 60, WHITE, size=2)
+        putcCN('挑战', 105, CYAN, size=1)
         line(40, 155, 200, 155, DIM)
         putcCN('按下按钮或挥手', 200, WHITE, size=1)
         putcCN('开始游戏', 225, DIM, size=1)
@@ -178,7 +178,7 @@ def page_menu(selected, first):
 
         cursor = '>' if sel else ' '
         put(cursor, 25, y + 4, color, size=2)
-        putCN(name, 45, y + 4, color, size=2)
+        putCN(name, 45, y + 4, color, size=1)
         putCN(desc, 25, y + 28, WHITE if sel else DIM, size=1)
 
     # 滚动条
@@ -216,7 +216,7 @@ def page_gaming(sim, first):
     ac = RED if trap else CYAN
     fill(20, 38, 200, 82, DARK_BG)
     putc(arrow, 50, ac, size=4)
-    putcCN('!!反转!!' if trap else '立即挥手', 105, RED if trap else GREEN, size=2)
+    putcCN('!!反转!!' if trap else '立即挥手', 105, RED if trap else GREEN, size=1)
 
     # 进度条
     remain = sim['deadline'] - time.ticks_ms()
@@ -239,7 +239,7 @@ def page_gaming(sim, first):
     # COMBO
     fill(20, 195, 200, 58, DARK_BG)
     if combo > 0:
-        cs = 3 if combo >= 5 else (2 if combo >= 3 else 1)
+        cs = 2 if combo >= 5 else (2 if combo >= 3 else 1)
         cc = RED if combo >= 5 else (ORANGE if combo >= 3 else CYAN)
         putcCN('连击 x{}'.format(combo), 205, cc, size=cs)
         if combo >= 3:
@@ -264,7 +264,7 @@ def page_result(sim, first):
     lcd.fill(DARK_BG)
 
     putcCN('**新纪录**' if sim.get('new_record') else '游戏结束',
-           10, YELLOW if sim.get('new_record') else WHITE, size=2)
+           10, YELLOW if sim.get('new_record') else WHITE, size=1)
 
     line(30, 40, 210, 40, DIM)
 
@@ -285,7 +285,7 @@ def page_result(sim, first):
     line(30, 218, 210, 218, DIM)
 
     rank = sim.get('rank', 3)
-    putcCN('排名: #{}'.format(rank), 235, YELLOW, size=2)
+    putcCN('排名: #{}'.format(rank), 235, YELLOW, size=1)
 
     # MQTT upload
     uploaded = False
@@ -448,5 +448,5 @@ if __name__ == '__main__':
         run()
     except KeyboardInterrupt:
         lcd.fill(BLACK)
-        putcCN('演示已停止', 140, WHITE, size=2)
+        putcCN('演示已停止', 140, WHITE, size=1)
         print('演示已停止。')
