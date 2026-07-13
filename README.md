@@ -1,91 +1,178 @@
-# SMP
+# ⚡ 反应挑战机 Reaction Challenge
 
+> ESP32 桌面反应力测试装置 + 赛博朋克 Web 全球排行榜
+> 手势答题 · COMBO 连击 · 舵机物理反馈 · MQTT 实时排名
 
-## Getting started
+---
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## 一、项目概述
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+桌面上一台 ESP32 小装置，LCD 随机出方向箭头，你用手势作答。答对 COMBO 越叠越高，舵机升旗 + 蜂鸣器欢呼。每次分数自动上传 MQTT，Web 排行榜实时刷新，朋友之间互相 PK。
 
-## Add your files
+| | |
+|:--|:--|
+| 🎮 **三种模式** | 手势闪电、超声波快拍、连击挑战 |
+| 🌐 **联网 PK** | MQTT 上传分数 → Web 全球排行榜 |
+| 🤖 **多传感器** | 手势识别 + 超声波 + 舵机 + 蜂鸣器 + 按钮 |
+| 📦 **无线便携** | 锂电池供电，放哪都能玩 |
+| 🎨 **赛博朋克** | Web 端 Canvas 粒子引擎 + 手电筒 + 双语界面 |
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+---
+
+## 二、硬件清单
+
+| 模块 | 型号 | 用途 |
+|:--|:--|:--|
+| 主控 | ESP32-S3 (pyWiFi) + 2.4" LCD | 主控 + 显示 |
+| 手势识别 | APDS-9960 / PAJ7620 | 核心输入：上下左右挥手 |
+| 超声波 | HC-SR04 | 第二模式：靠近/远离 |
+| 舵机 | SG90 | 物理反馈：答对升旗 / 答错倒旗 |
+| 蜂鸣器 | 无源蜂鸣器 | 倒计时音效 + COMBO 音阶 |
+| 按钮 | 微动开关 ×2 | 开始游戏 / 模式切换 |
+| 供电 | 锂电池 | 无线便携 |
+
+### 接线表
+
+| 模块 | 引脚 | ESP32 |
+|:--|:--|:--|
+| 手势 SDA | → | GPIO 17 |
+| 手势 SCL | → | GPIO 18 |
+| 手势 VCC | → | 3.3V |
+| 手势 GND | → | GND |
+| 超声波 Trig | → | GPIO 5 |
+| 超声波 Echo | → | GPIO 6 |
+| 舵机棕线 GND | → | GND |
+| 舵机红线 VCC | → | **5V** |
+| 舵机橙线信号 | → | GPIO 7 |
+| 蜂鸣器 | → | GPIO 8 |
+| 按钮 1 | → | GPIO 9 + GND |
+| 按钮 2 | → | GPIO 11 + GND |
+
+---
+
+## 三、游戏模式
+
+### 模式 1 · 手势闪电 ⚡
+
+LCD 显示箭头方向（⬆️⬇️⬅️➡️），倒计时内挥出正确手势。
+
+| 题号 | 时限 | 难度 |
+|:--|:--|:--|
+| 第 1-5 题 | 2.0 秒 | 基础方向 |
+| 第 6-10 题 | 1.5 秒 | 加速 |
+| 第 11-15 题 | 1.0 秒 | 更快 |
+| 第 16 题起 | 0.7 秒 | 30% 概率红色反方向陷阱 |
+
+### 模式 2 · 超声波快拍 🖐️
+
+LCD 变色 → 手靠近 / 远离 / 不动，测反应时间（ms）。
+
+### 模式 3 · 连击挑战 🔥
+
+手势 + 超声波混合出题，60 秒限时，COMBO ×1 → ×2 → ×5 → ×10。
+
+---
+
+## 四、舵机 & 蜂鸣器反馈
+
+| 事件 | 舵机 | 蜂鸣器 |
+|:--|:--|:--|
+| 答对 | 0°→90° 升绿旗 | 短"滴" |
+| 答错 | 倒旗 | 低沉"嘟—" |
+| COMBO ×5 | 来回摆动 | 上升音阶 🎵 |
+| 破纪录 | 绕一圈 | 胜利旋律 |
+| 游戏结束 | 抖三下 | sad 下降 |
+
+---
+
+## 五、文件结构
 
 ```
-cd existing_repo
-git remote add origin http://git.caty.io:8848/yyyy/smp.git
-git branch -M master
-git push -uf origin master
+reaction_challenge/
+├── README.md              # 本文档
+├── display_demo.py        # ESP32 主程序 — LCD UI + MQTT
+├── mqtt_handler.py        # WiFi / MQTT / 分数上传 / 远程指令 / 玩家名
+├── simple.py              # MQTT 客户端库
+└── web/
+    └── index.html         # 赛博朋克排行榜（单文件）
 ```
 
-## Integrate with your tools
+---
 
-- [ ] [Set up project integrations](http://git.caty.io:8848/yyyy/smp/-/settings/integrations)
+## 六、快速开始
 
-## Collaborate with your team
+### ESP32 端
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Automatically merge when pipeline succeeds](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+将以下文件烧录到 ESP32 并运行：
 
-## Test and Deploy
+```
+simple.py
+mqtt_handler.py
+display_demo.py
+```
 
-Use the built-in continuous integration in GitLab.
+```python
+import display_demo
+display_demo.run()
+```
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing(SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+### Web 排行榜
 
-***
+```bash
+cd reaction_challenge/web
+python -m http.server 8080
+# 浏览器打开 http://localhost:8080
+```
 
-# Editing this README
+或 VS Code 装 Live Server → 右键 `index.html` → Open with Live Server。
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!).  Thank you to [makeareadme.com](https://www.makeareadme.com/) for this template.
+---
 
-## Suggestions for a good README
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+## 七、Web 排行榜功能
 
-## Name
-Choose a self-explaining name for your project.
+| 功能 | 说明 |
+|:--|:--|
+| 🏆 领奖台 | TOP 3 金银铜 + 👑🥈🥉 奖牌动画 |
+| 📊 实时排名 | MQTT 订阅，新分数自动上榜 |
+| 🎮 远程控制 | 网页按钮切换 ESP32 游戏模式 |
+| 👤 玩家名 | 网页输入 → MQTT 同步到 ESP32 |
+| 🌌 Canvas 粒子 | 160 节点网络 + 350 星系尘埃 + 10 星云 + 6 星团 + 100 数据雨 |
+| 🔦 手电筒 | 鼠标处增亮，周围渐暗 |
+| 🎨 标题变色 | 鼠标滑过标题区域变紫 |
+| 💥 点击特效 | 粒子炸裂 + 光环扩散 |
+| 🌐 双语界面 | Orbitron 字体，中英对照 |
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+---
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+## 八、MQTT 协议
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+| 主题 | 方向 | 用途 |
+|:--|:--|:--|
+| `/reaction/score` | ESP32 → Web | 分数上报 |
+| `/reaction/control` | Web → ESP32 | 远程指令 (gesture/sonic/combo/back) |
+| `/reaction/player` | Web → ESP32 | 玩家名同步 |
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+**分数 JSON：**
+```json
+{"device":"张三","score":147,"mode":"gesture","combo":8,"avg_ms":340,"questions":18}
+```
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+---
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+## 九、LCD 界面（中文）
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+四页面轮播：标题页（闪电动画）→ 菜单页（手势选模式）→ 游戏中（箭头 + 倒计时 + COMBO）→ 结算页（分数 + 排名）→ 回标题。
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+支持中文字库（`fonts.py`），16~48px 多尺寸渲染。
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+---
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+## 十、开发日志
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+```
+fix: 倒计时改用真实硬件时钟
+feat: 反应挑战机 + MQTT 排行榜
+feat(web): 赛博朋克风排行榜 — Canvas 粒子、中英双语、远程控制、奖牌
+feat: 网页端玩家名注册 + MQTT 同步到 ESP32
+docs: 更新 README 至项目完成版
+```

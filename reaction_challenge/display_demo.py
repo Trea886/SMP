@@ -1,449 +1,288 @@
 """
-Reaction Challenge - LCD UI Demo
-Single file, no sensors, no dependencies
-Just the board + LCD + buzzer
-
-Copy to ESP32 as main.py, or:
-    import display_demo
-    display_demo.run()
+Reaction Challenge - LCD Auto Demo
+No sensors needed - auto cycles 4 pages
 """
 
 from tftlcd import LCD24
+from machine import Pin
 import time
-import _thread
-import fonts
-import gc
 
-# MQTT (optional - game works without it)
-try:
-    from mqtt_handler import upload_score, check_command
-    _has_mqtt = True
-    print('[OK] MQTT module loaded')
-except ImportError:
-    _has_mqtt = False
-    check_command = None
-    upload_score = None
-    print('[WARN] mqtt_handler.py not found, playing offline')
-
-# ==================== Colors ====================
-BLACK   = (0, 0, 0)
-WHITE   = (255, 255, 255)
-RED     = (255, 0, 0)
-GREEN   = (0, 255, 0)
-CYAN    = (0, 255, 255)
-YELLOW  = (255, 255, 0)
-ORANGE  = (255, 140, 0)
-DIM     = (80, 80, 80)
-DARK_BG = (10, 10, 20)
+# Ultrasonic
+from sonic_sensor import HCSR04
+sonic = HCSR04(Pin(8, Pin.OUT), Pin(9, Pin.IN))
 
 lcd = LCD24(portrait=1)
-lcd.fill(BLACK)
 
-# ============ 中文字体 ============
+BLACK=(0,0,0); WHITE=(255,255,255); RED=(255,0,0); GREEN=(0,255,0)
+CYAN=(0,255,255); YELLOW=(255,255,0); ORANGE=(255,140,0)
+DIM=(80,80,80); DARK_BG=(10,10,20)
 
-FONT_SIZES = [0, 16, 24, 32, 40, 48]  # size=1~5 对应的像素尺寸
+# MQTT
+try:
+    from mqtt_handler import connect_wifi, connect_mqtt, upload_score
+    _has_mqtt = True
+except:
+    _has_mqtt = False
 
-def printChinese(text, x, y, color=WHITE, backcolor=None, size=2):
-    """在LCD上显示中文，size=1~5 对应 16~48px 字库"""
-    if backcolor is None:
-        backcolor = DARK_BG
+def pt(t,x,y,c,s=2): lcd.printStr(t,x,y,c,size=s)
+def ptc(t,y,c,s=2):
+    w=len(t)*6*s; x=max(0,(240-w)//2)
+    lcd.printStr(t,x,y,c,size=s)
+def ln(x1,y1,x2,y2,c):
+    try: lcd.drawLine(x1,y1,x2,y2,c)
+    except: pass
 
-    # 选择字库
-    dict_map = {
-        1: fonts.hanzi_16x16_dict,
-        2: fonts.hanzi_24x24_dict,
-    }
-    chinese_dict = dict_map.get(size, fonts.hanzi_16x16_dict)
+def fl(x,y,w,h,c):
+    try: lcd.drawRect(x,y,w,h,c,True)
+    except: pass
 
-    px = FONT_SIZES[size]
-
-    # RGB888 → RGB565
-    fc = ((color[0] >> 3) << 11) + ((color[1] >> 2) << 5) + (color[2] >> 3)
-    bc = ((backcolor[0] >> 3) << 11) + ((backcolor[1] >> 2) << 5) + (backcolor[2] >> 3)
-
-    xs = x
-    for ch in text:
-        if ch not in chinese_dict:
-            # 非汉字（数字/符号），用内置字体显示
-            lcd.printStr(ch, xs, y, color, size=1)
-            xs += 8  # ASCII 字符宽度约 8px
-            continue
-        buf = chinese_dict[ch]
-        rgb_buf = []
-
-        for byte_val in buf:
-            for j in range(8):
-                if (byte_val << j) & 0x80 == 0x00:
-                    rgb_buf.append(bc & 0xFF)
-                    rgb_buf.append(bc >> 8)
-                else:
-                    rgb_buf.append(fc & 0xFF)
-                    rgb_buf.append(fc >> 8)
-
-        lcd.write_buf(bytearray(rgb_buf), xs, y, px, px)
-        xs += px
-
-    gc.collect()
+def fr(x,y,w,h,c):
+    try: lcd.drawRect(x,y,w,h,c,False)
+    except: pass
 
 
-def putCN(text, x, y, color=WHITE, backcolor=None, size=2):
-    """中文显示"""
-    printChinese(text, x, y, color, backcolor, size)
-
-
-def putcCN(text, y, color=WHITE, backcolor=None, size=2):
-    """居中中文"""
-    px = FONT_SIZES[size]
-    w = len(text) * px
-    x = max(0, (240 - w) // 2)
-    printChinese(text, x, y, color, backcolor, size)
-
-
-# ============ Helpers ============
-
-def line(x1, y1, x2, y2, color):
-    try:
-        lcd.drawLine(x1, y1, x2, y2, color)
-    except:
-        pass
-
-def fill(x, y, w, h, color):
-    try:
-        lcd.drawRect(x, y, w, h, color, True)
-    except:
-        pass
-
-def rect(x, y, w, h, color):
-    try:
-        lcd.drawRect(x, y, w, h, color, False)
-    except:
-        pass
-
-def put(text, x, y, color, size=2):
-    lcd.printStr(text, x, y, color, size=size)
-
-def putc(text, y, color, size=2):
-    """居中文字"""
-    w = len(text) * 6 * size
-    x = max(0, (240 - w) // 2)
-    lcd.printStr(text, x, y, color, size=size)
-
-
-# ==================== Page 1: Title ====================
-
+# ===== Page 1: Title =====
 def page_title(ticks, first):
     if first:
         lcd.fill(DARK_BG)
-        putcCN('反应', 60, WHITE, size=2)
-        putcCN('挑战', 105, CYAN, size=1)
-        line(40, 155, 200, 155, DIM)
-        putcCN('按下按钮或挥手', 200, WHITE, size=1)
-        putcCN('开始游戏', 225, DIM, size=1)
-        mqtt_ok = _has_mqtt
-        put('v0.1  MQTT' + (' OK' if mqtt_ok else ' ---'), 10, 295,
-            GREEN if mqtt_ok else DIM, size=1)
-
-    # 闪电闪烁
-    c = YELLOW if ticks % 5 < 3 else DARK_BG
-    line(100, 20, 140, 20, c)
-    line(140, 20, 120, 40, c)
-    line(120, 40, 160, 40, c)
-    line(160, 40, 110, 70, c)
-
-
-# ==================== Page 2: Menu ====================
-
-MODES = [
-    ('手势',    '箭头提示 - 挥手回答',   YELLOW),
-    ('超声波',  '手靠近或远离传感器',    GREEN),
-    ('组合',    '混合提示 - 连击奖励',   ORANGE),
-]
-HIGHLIGHT_BOX = (0, 80, 180)  # 选中框颜色，不和文字色混用
-
-def page_menu(selected, first):
-    if first:
-        lcd.fill(DARK_BG)
-        putcCN('选择模式', 15, CYAN, size=1)
-        line(20, 45, 220, 45, DIM)
-        put('上/下: 选择', 10, 270, DIM, size=1)
-        put('前:   确认', 10, 290, DIM, size=1)
-
-    for i, (name, desc, color) in enumerate(MODES):
-        y = 72 + i * 62
-        sel = (i == selected)
-        fill(15, y - 3, 210, 52, HIGHLIGHT_BOX if sel else DARK_BG)
-
-        cursor = '>' if sel else ' '
-        put(cursor, 25, y + 4, color, size=2)
-        putCN(name, 45, y + 4, color, size=1)
-        putCN(desc, 25, y + 28, WHITE if sel else DIM, size=1)
-
-    # 滚动条
-    bar_y = 72 + selected * 62
-    fill(232, 68, 4, 178, DARK_BG)
-    rect(232, 68, 4, 178, DIM)
-    fill(232, bar_y, 4, 48, CYAN)
-
-
-# ==================== Page 3: Gaming ====================
-
-ARROWS = {'UP': '^', 'DOWN': 'v', 'LEFT': '<', 'RIGHT': '>'}
-DIRS   = ['UP', 'DOWN', 'LEFT', 'RIGHT']
-
-def page_gaming(sim, first):
-    if first:
-        lcd.fill(DARK_BG)
-        line(5, 25, 235, 25, DIM)
-        line(20, 190, 220, 190, DIM)
-
-    q = sim['q_num']
-    direction = sim['direction']
-    trap = sim.get('trap', False)
-    combo = sim['combo']
-
-    # 顶栏
-    fill(5, 2, 235, 22, DARK_BG)
-    putCN('分数', 8, 5, WHITE, size=1)
-    put(str(sim['score']), 44, 5, YELLOW, size=1)
-    putCN('题', 155, 5, DIM, size=1)
-    put('{}/20'.format(q), 175, 5, CYAN, size=1)
-
-    # 箭头
-    arrow = ARROWS.get(direction, '?')
-    ac = RED if trap else CYAN
-    fill(20, 38, 200, 82, DARK_BG)
-    putc(arrow, 50, ac, size=4)
-    putcCN('!!反转!!' if trap else '立即挥手', 105, RED if trap else GREEN, size=1)
-
-    # 进度条
-    remain = sim['deadline'] - time.ticks_ms()
-    total  = sim['timeout']
-    pct = max(0, min(1, remain / total))
-
-    if pct > 0.5:   bc = GREEN
-    elif pct > 0.25: bc = YELLOW
-    else:            bc = RED
-
-    fill(20, 140, 200, 12, DIM)
-    fw = int(200 * pct)
-    if fw > 0:
-        fill(20, 140, fw, 12, bc)
-    rect(20, 140, 200, 12, WHITE)
-
-    fill(20, 157, 200, 22, DARK_BG)
-    putc('{:.1f}s'.format(max(0, remain / 1000)), 160, bc, size=1)
-
-    # COMBO
-    fill(20, 195, 200, 58, DARK_BG)
-    if combo > 0:
-        cs = 2 if combo >= 5 else (2 if combo >= 3 else 1)
-        cc = RED if combo >= 5 else (ORANGE if combo >= 3 else CYAN)
-        putcCN('连击 x{}'.format(combo), 205, cc, size=cs)
-        if combo >= 3:
-            putcCN('燃烧!', 240, ORANGE, size=1)
-
-    # 底栏
-    fill(5, 278, 120, 18, DARK_BG)
-    putCN('难度', 8, 280, DIM, size=1)
-    put(':' + '*' * sim.get('difficulty', 1), 42, 280, DIM, size=1)
-
-    if trap:
-        fill(125, 278, 110, 18, DARK_BG)
-        putCN('反向挥手!', 115, 280, RED, size=1)
-
-
-# ==================== Page 4: Result ====================
-
-def page_result(sim, first):
+        ptc('REACTION', 80, WHITE, 3)
+        ptc('CHALLENGE', 120, CYAN, 2)
+        ln(40, 155, 200, 155, DIM)
+        ptc('Ultrasonic Mode', 200, WHITE, 1)
+        ptc('Auto Start...', 225, DIM, 1)
+        mq = 'MQTT OK' if _has_mqtt else 'MQTT ---'
+        pt(mq, 10, 295, GREEN if _has_mqtt else DIM, 1)
+    # 闪电只在非第一帧画（避免卡顿）
     if not first:
-        return
+        c = YELLOW if ticks % 6 < 3 else DARK_BG
+        ln(100,20,140,20,c)
+        ln(140,20,120,40,c)
+        ln(120,40,160,40,c)
+        ln(160,40,110,70,c)
 
+
+# ===== Page 2: Menu =====
+def page_menu(first):
+    if first:
+        lcd.fill(DARK_BG)
+        ptc('SELECT MODE', 15, CYAN, 2)
+        ln(20, 45, 220, 45, DIM)
+        # 只显示超声波
+        fl(15, 68, 210, 52, (0,80,180))
+        pt('> ULTRASONIC', 25, 78, GREEN, 2)
+        pt('Move hand near or far', 25, 105, WHITE, 1)
+        pt('Auto starting...', 60, 200, DIM, 1)
+
+
+# ===== Page 3: Gaming =====
+def page_gaming(sim, first):
     lcd.fill(DARK_BG)
-
-    putcCN('**新纪录**' if sim.get('new_record') else '游戏结束',
-           10, YELLOW if sim.get('new_record') else WHITE, size=1)
-
-    line(30, 40, 210, 40, DIM)
-
-    rows_cn = [
-        ('分数',     '{}'.format(sim['score']),      '分', YELLOW),
-        ('最大连击', 'x{}'.format(sim['max_combo']),  '',   ORANGE),
-        ('已答',     '{}'.format(sim['q_num'] - 1),   '题', WHITE),
-        ('平均速度', '{:.2f}'.format(sim.get('avg_reaction', 0.34)), '秒', GREEN),
-    ]
-
-    for i, (label, num_val, unit, color) in enumerate(rows_cn):
-        y = 60 + i * 38
-        putCN(label, 15, y, DIM, size=1)
-        put(num_val, 120, y, color, size=2)
-        if unit:
-            putCN(unit, 120 + len(num_val) * 12, y + 2, color, size=1)
-
-    line(30, 218, 210, 218, DIM)
-
-    rank = sim.get('rank', 3)
-    putcCN('排名: #{}'.format(rank), 235, YELLOW, size=1)
-
-    # MQTT upload
-    uploaded = False
-    if _has_mqtt:
-        uploaded = upload_score(
-            sim['score'],
-            mode='gesture',
-            combo=sim.get('max_combo', 0),
-            avg_ms=int(sim.get('avg_reaction', 0.34) * 1000),
-            questions=sim['q_num'] - 1
-        )
-
-    if uploaded:
-        putcCN('分数已上传!', 270, GREEN, size=1)
+    ln(5, 25, 235, 25, DIM)
+    ln(20, 190, 220, 190, DIM)
+    q = sim['q_num']
+    action = sim.get('action', 'CLOSE')
+    combo = sim['combo']
+    # Top
+    fl(5,2,235,22,DARK_BG)
+    pt('SCORE: '+str(sim['score']), 8, 5, WHITE, 1)
+    pt('Q '+str(q)+'/20', 155, 5, CYAN, 1)
+    # Action
+    fl(20,38,200,82,DARK_BG)
+    if action == 'CLOSE':
+        ptc('CLOSE!', 55, GREEN, 3)
+        ptc('Hand < 20cm', 95, GREEN, 1)
     else:
-        putcCN('离线(已保存)', 270, DIM, size=1)
+        ptc('BACK!', 55, CYAN, 3)
+        ptc('Hand > 70cm', 95, CYAN, 1)
+    # Progress bar
+    remain = sim['deadline'] - time.ticks_ms()
+    total = sim['timeout']
+    pct = max(0, min(1, remain / total))
+    bc = GREEN if pct>.5 else (YELLOW if pct>.25 else RED)
+    fl(20,140,200,12,DIM)
+    fw = int(200 * pct)
+    if fw > 0: fl(20,140,fw,12,bc)
+    fr(20,140,200,12,WHITE)
+    fl(20,157,200,22,DARK_BG)
+    ptc('{:.1f}s'.format(max(0,remain/1000)), 160, bc, 1)
+    # COMBO
+    fl(20,195,200,58,DARK_BG)
+    if combo > 0:
+        cs = 3 if combo>=5 else (2 if combo>=3 else 1)
+        cc = RED if combo>=5 else (ORANGE if combo>=3 else CYAN)
+        ptc('COMBO x'+str(combo), 210, cc, cs)
+    # Bottom
+    fl(5,278,120,18,DARK_BG)
+    pt('DIFF:'+'*'*sim.get('difficulty',1), 8, 280, DIM, 1)
 
-    putCN('挥手:重试', 5, 295, DIM, size=1)
-    putCN('返回:菜单', 145, 295, DIM, size=1)
+
+# ===== Page 4: Result =====
+def page_result(sim, first):
+    if not first: return
+    lcd.fill(DARK_BG)
+    ptc('** NEW RECORD **' if sim.get('new_record') else 'GAME OVER', 10,
+        YELLOW if sim.get('new_record') else WHITE, 2)
+    ln(30, 40, 210, 40, DIM)
+    rows = [
+        ('Score',     str(sim['score'])+' pts',  YELLOW),
+        ('Max COMBO', 'x'+str(sim['max_combo']), ORANGE),
+        ('Answered',  str(sim['q_num']-1)+' Q',  WHITE),
+        ('Avg Speed', '{:.2f}s'.format(sim.get('avg_reaction',0.34)), GREEN),
+    ]
+    for i,(label,value,color) in enumerate(rows):
+        y = 60 + i * 38
+        pt(label, 15, y, DIM, 1)
+        pt(value, 120, y, color, 2)
+    ln(30, 218, 210, 218, DIM)
+    rank = sim.get('rank', 3)
+    ptc('RANK: #'+str(rank), 235, YELLOW, 2)
+    ptc('Score Uploaded!' if sim.get('uploaded') else 'Offline', 270,
+        GREEN if sim.get('uploaded') else DIM, 1)
+    pt('Wave: Retry', 5, 298, DIM, 1)
+    pt('Back: Menu', 145, 298, DIM, 1)
 
 
-# ==================== Simulator ====================
-
-_gaming_q_start = 0
-_gaming_q_idx   = -1
+# ===== Simulator =====
+_q_start = 0  # 每道题开始的真实时间
+_q_idx = -1   # 当前题目序号
 
 def simulate(phase, ticks):
-    global _gaming_q_start, _gaming_q_idx
-
+    global _q_start, _q_idx
+    if phase == 'menu':
+        return {'selected': (ticks // 20) % 3}
     if phase == 'result':
         return {
-            'score': 147 + (ticks // 30) * 5,
-            'max_combo': 8 + (ticks // 30) % 5,
+            'score': 147 + (ticks//30)*5,
+            'max_combo': 8 + (ticks//30)%5,
             'q_num': 18,
-            'avg_reaction': 0.28 + (ticks % 3) * 0.05,
-            'rank': max(1, 3 - (ticks // 30) % 3),
-            'new_record': (ticks // 30) % 3 == 0,
+            'avg_reaction': 0.28 + (ticks%3)*.05,
+            'rank': max(1, 3 - (ticks//30)%3),
+            'new_record': (ticks//30)%3==0,
+            'uploaded': ticks > 15,
         }
-
     if phase == 'gaming':
         qc = ticks // 10
         q = (qc % 15) + 1
+        if qc != _q_idx:
+            _q_start = time.ticks_ms()
+            _q_idx = qc
         combo = min(12, q % 8)
-        timeout = max(700, 2000 - (q // 5) * 200)
-
-        # 新题目开始 → 记录真实时钟起始点
-        if qc != _gaming_q_idx:
-            _gaming_q_start = time.ticks_ms()
-            _gaming_q_idx = qc
-
+        timeout = max(700, 2000 - (q//5)*200)
         return {
-            'score': q * 10 + combo * 5,
+            'score': q*10 + combo*5,
             'q_num': q,
-            'direction': DIRS[(q + qc) % 4],
-            'trap': q >= 12 and (qc % 3 == 0),
-            'deadline': _gaming_q_start + timeout,
+            'action': 'CLOSE' if q%2==1 else 'BACK',
+            'deadline': _q_start + timeout,
             'timeout': timeout,
             'combo': combo,
-            'difficulty': min(5, 1 + q // 5),
+            'difficulty': min(5, 1+q//5),
         }
-
-    if phase == 'menu':
-        return {'selected': (ticks // 20) % 3}
-
     return None
 
 
-# ==================== MQTT Init (background) ====================
-
-def _mqtt_init():
-    """Run in a thread at boot - connect WiFi + MQTT"""
-    try:
-        from mqtt_handler import connect_wifi, connect_mqtt
-        if connect_wifi():
-            connect_mqtt()
-    except:
-        pass  # Offline is OK
-
-
-# ==================== Main ====================
-
+# ===== Main =====
 def run():
-    DUR = {'title': 40, 'menu': 55, 'gaming': 100, 'result': 40}
-    ORDER = ['title', 'menu', 'gaming', 'result']
+    state = 'title'
+    t = 0; first = True; last_read = 0
 
-    phase = ORDER[0]
-    idx   = 0
-    t     = 0
-    first = True
+    # Game vars
+    score = 0; combo = 0; max_combo = 0; q_num = 1
+    target = 'CLOSE'
+    deadline = 0; grace_end = 0
+    uploaded = False
 
-    print('========================================')
-    print('  反应挑战机 - LCD 界面演示')
-    print('  MQTT: {}'.format('是' if _has_mqtt else '否'))
-    print('========================================')
+    print('==============================')
+    print('  Reaction Challenge - Sonic')
+    print('==============================')
 
-    # Start WiFi/MQTT connection in background (non-blocking)
-    if _has_mqtt:
-        try:
-            _thread.start_new_thread(_mqtt_init, ())
-        except:
-            pass
+    def new_game():
+        nonlocal score,combo,max_combo,q_num,target,deadline,grace_end,uploaded
+        score=0;combo=0;max_combo=0;q_num=1
+        target='CLOSE'  # 第一题固定靠近
+        deadline=time.ticks_ms()+5000
+        grace_end=time.ticks_ms()+2500
+        uploaded=False
+
+    def next_q():
+        nonlocal q_num,target,deadline,grace_end
+        q_num+=1
+        target='BACK' if target=='CLOSE' else 'CLOSE'  # 交替
+        deadline=time.ticks_ms()+max(3500,5000-q_num*150)
+        grace_end=time.ticks_ms()+2000
+
+    new_game()
 
     while True:
-        # ---- Check for web remote commands ----
-        cmd = None
-        if _has_mqtt:
-            try:
-                raw = check_command()
-                if raw:
-                    # Web sends '{"cmd":"gesture"}', extract the value
-                    if '"gesture"' in raw:    cmd = 'gesture'
-                    elif '"sonic"' in raw:    cmd = 'sonic'
-                    elif '"combo"' in raw:    cmd = 'combo'
-                    elif '"back"' in raw:     cmd = 'back'
-                    print('[CMD] Web remote:', cmd)
-            except:
-                pass
+        # Only read sensor in game state
+        d = -1
+        if state == 'game' and time.ticks_diff(time.ticks_ms(), last_read) > 500:
+            d = sonic.getDistance()
+            last_read = time.ticks_ms()
 
-        # ---- Handle command ----
-        if cmd == 'gesture':
-            phase = 'gaming'
-            t = 0; first = True
-        elif cmd == 'sonic':
-            phase = 'gaming'
-            t = 0; first = True
-        elif cmd == 'combo':
-            phase = 'gaming'
-            t = 0; first = True
-        elif cmd == 'back':
-            phase = 'title'
-            idx = 0; t = 0; first = True
-
-        # ---- Render current phase ----
-        sim = simulate(phase, t)
-
-        if phase == 'title':
+        if state == 'title':
             page_title(t, first)
-        elif phase == 'menu':
-            page_menu(sim['selected'] if sim else 0, first)
-        elif phase == 'gaming':
-            if sim:
-                page_gaming(sim, first)
-        elif phase == 'result':
-            page_result(sim, first)
+            first = False
+            if t > 30:
+                state = 'game'
+                new_game()
+                t = 0; first = True
+        elif state == 'game':
+            sim = {
+                'score': score, 'q_num': q_num,
+                'action': target,
+                'deadline': deadline, 'timeout': 3000,
+                'combo': combo, 'difficulty': min(5,1+q_num//5),
+            }
+            page_gaming(sim, first)
+            first = False
 
-        first = False
-        time.sleep_ms(100)
+            if d > 0:
+                if time.ticks_diff(time.ticks_ms(), grace_end) < 0:
+                    pass  # grace period
+                else:
+                    a = 'HOLD'
+                    if d < 20: a = 'CLOSE'
+                    elif d > 70: a = 'BACK'
+                    if a == target:
+                        combo += 1
+                        if combo > max_combo: max_combo = combo
+                        m = [1,1,2,3,5,10]
+                        score += 10 * m[min(combo,5)]
+                        next_q()
+                        first = True
+                    elif a != 'HOLD':
+                        state = 'result'
+                        if _has_mqtt:
+                            try: upload_score(score,'sonic',max_combo,340,q_num-1); uploaded=True
+                            except: pass
+                        t = 0; first = True
+
+            if time.ticks_diff(time.ticks_ms(), deadline) > 0:
+                state = 'result'
+                if _has_mqtt:
+                    try: upload_score(score,'sonic',max_combo,340,q_num-1); uploaded=True
+                    except: pass
+                t = 0; first = True
+
+        elif state == 'result':
+            if first:
+                lcd.fill(DARK_BG)
+                ptc('GAME OVER', 20, WHITE, 3)
+                ptc('游戏失败', 70, RED, 2)
+                ptc('Score: '+str(score), 120, YELLOW, 2)
+                ptc('Max COMBO: x'+str(max_combo), 160, ORANGE, 1)
+                if uploaded:
+                    ptc('Data Uploaded!', 210, GREEN, 1)
+                else:
+                    ptc('Offline Mode', 210, DIM, 1)
+                ptc('Restart in 6s...', 260, DIM, 1)
+
+        if state == 'result':
+            if t > 40:
+                state = 'title'; t = 0; first = True
+
+        time.sleep_ms(150)
         t += 1
 
-        # Auto-cycle only if no web command received
-        if cmd is None and t >= DUR[phase]:
-            idx = (idx + 1) % 4
-            phase = ORDER[idx]
-            t = 0
-            first = True
 
-
-if __name__ == '__main__':
-    try:
-        run()
-    except KeyboardInterrupt:
-        lcd.fill(BLACK)
-        putcCN('演示已停止', 140, WHITE, size=1)
-        print('演示已停止。')
+run()
