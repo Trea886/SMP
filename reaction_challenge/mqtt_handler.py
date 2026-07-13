@@ -9,7 +9,7 @@ from simple import MQTTClient
 
 # ==================== Config ====================
 WIFI_SSID  = 'iPhone'
-WIFI_PASS  = '7878789191'
+WIFI_PASS  = '1029384756'
 MQTT_HOST  = 'broker.emqx.io'
 MQTT_PORT  = 1883
 CLIENT_ID  = 'ESP32_Reaction'
