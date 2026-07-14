@@ -212,6 +212,9 @@
 const TS='/reaction/score',TC='/reaction/control',TP='/reaction/player';
 const WS=['wss://broker.emqx.io:8084/mqtt','ws://broker.emqx.io:8083/mqtt'];
 let scores=[],mode='all',devs=new Set(),cli,topScore=0,ui=0;
+const MAX_SCORES=100,SK='rct_scores';
+try{const d=JSON.parse(localStorage.getItem(SK));if(Array.isArray(d)){scores=d;scores.forEach(s=>devs.add(s.device||'?'));topScore=Math.max(0,...scores.map(s=>s.score))}}catch(e){}
+function save(){while(scores.length>MAX_SCORES)scores.shift();try{localStorage.setItem(SK,JSON.stringify(scores))}catch(e){}}
 const $=id=>document.getElementById(id);
 
 // ===== Title: gradient color follows mouse =====
@@ -237,7 +240,7 @@ function conn(){
   cli.on('message',(t,p)=>{
     try{
       const d=JSON.parse(p.toString());d._t=Date.now();d._id=Math.random().toString(36).slice(2,6);
-      scores.push(d);devs.add(d.device||'?');if(scores.length>300)scores=scores.slice(-200);
+      scores.push(d);devs.add(d.device||'?');save();
       const mc=Math.max(...scores.map(s=>s.combo||0));
       if(d.combo&&d.combo>=5&&d.combo===mc)showFire(d.combo);
       if(d.score>topScore&&topScore>0){spawnP(30);showToast('NEW RECORD: '+d.score)}
@@ -250,8 +253,7 @@ conn();
 
 function board(){
   let f=scores;if(mode!=='all')f=scores.filter(s=>s.mode===mode);
-  const b={};f.forEach(s=>{const k=s.device||'?';if(!b[k]||s.score>b[k].score)b[k]=s});
-  return Object.values(b).sort((a,b)=>b.score-a.score).slice(0,20);
+  return f.sort((a,b)=>b.score-a.score).slice(0,20);
 }
 function esc(s){const d=document.createElement('div');d.textContent=s||'?';return d.innerHTML}
 
@@ -302,7 +304,7 @@ function injectDemo(){
     devs.add(scores[scores.length-1].device);
     if(scores[scores.length-1].score>topScore)topScore=scores[scores.length-1].score;
   }
-  render();showToast('DEMO DATA LOADED');
+  save();render();showToast('DEMO DATA LOADED');
 }
 
 function showToast(m){const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2300)}
