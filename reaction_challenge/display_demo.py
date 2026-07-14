@@ -4,6 +4,7 @@ RCT Final - Gesture Only (Direction + Forward/Back)
 
 from tftlcd import LCD24
 import time, random
+from fonts import hanzi_16x16_dict
 
 # Gesture sensor
 from gesture_sensor import init as ges_init, read_gesture
@@ -30,13 +31,40 @@ def fl(x,y,w,h,c):
     try: lcd.drawRect(x,y,w,h,c,True)
     except: pass
 
+def cn(text, x, y, color, bg=DARK):
+    """Draw Chinese text (16x16 bitmap, no scaling)"""
+    fc = ((color[0]>>3)<<11) + ((color[1]>>2)<<5) + (color[2]>>3)
+    bc = ((bg[0]>>3)<<11) + ((bg[1]>>2)<<5) + (bg[2]>>3)
+    for ch in text:
+        bm = hanzi_16x16_dict.get(ch)
+        if bm:
+            buf = []
+            for k in range(32):
+                byte = bm[k]
+                for j in range(8):
+                    if (byte << j) & 0x80:
+                        buf.append(fc & 0xff); buf.append(fc >> 8)
+                    else:
+                        buf.append(bc & 0xff); buf.append(bc >> 8)
+            lcd.write_buf(bytearray(buf), x, y, 16, 16)
+            x += 16
+        else:
+            lcd.printStr(ch, x, y + 4, color, size=1)
+            x += 8
+
+def cnc(text, y, color, bg=DARK):
+    """Centered Chinese text"""
+    w = len(text) * 16
+    x = max(0, (240 - w) // 2)
+    cn(text, x, y, color, bg)
+
 # ==================== Pages ====================
 
 def page_title(t, first):
     if first:
         lcd.fill(DARK)
-        ptc('REACTION', 70, WHITE, 3)
-        ptc('CHALLENGE', 110, CYAN, 2)
+        cnc('反应挑战', 55, WHITE)
+        cnc('手势模式', 95, CYAN)
         ln(40, 150, 200, 150, DIM)
     c = YELLOW if t%6<3 else DARK
     ln(100,15,140,15,c); ln(140,15,120,35,c); ln(120,35,160,35,c); ln(160,35,110,65,c)
@@ -44,8 +72,9 @@ def page_title(t, first):
 def page_game(sim, first):
     if first: lcd.fill(DARK)
     # Top bar
-    fl(5,2,235,22,DARK); pt('SCORE:'+str(sim['s']),8,5,WHITE,1)
-    pt('Q '+str(sim['q']),155,5,CYAN,1)
+    fl(5,2,235,22,DARK)
+    cn('分数', 8, 5, WHITE); pt(': '+str(sim['s']), 8+32, 5, WHITE, 1)
+    cn('题', 180, 5, CYAN); pt(str(sim['q']), 196, 5, CYAN, 1)
     # Question area
     qtype = sim['type']  # 'arrow' or 'dist'
     fl(20,40,200,90,DARK)
@@ -53,17 +82,17 @@ def page_game(sim, first):
         arrows = {'UP':'^','DOWN':'v','LEFT':'<','RIGHT':'>'}
         d = sim['dir']
         ac = RED if sim.get('trap') else CYAN
-        ptc(arrows.get(d,'?'), 50, ac, 4)
-        ptc('!! REVERSE !!' if sim.get('trap') else 'WAVE DIRECTION', 108,
-            RED if sim.get('trap') else GREEN, 1)
+        ptc(arrows.get(d,'?'), 50, ac, 3)
+        cnc('!! 反向 !!' if sim.get('trap') else '按箭头挥手', 108,
+            RED if sim.get('trap') else GREEN)
     else:
         act = sim['act']
         if act == 'FORWARD':
-            ptc('FORWARD!', 50, GREEN, 3)
-            ptc('Move hand closer', 90, GREEN, 1)
+            cnc('向前!', 50, GREEN)
+            cnc('手靠近', 90, GREEN)
         else:
-            ptc('BACK!', 50, CYAN, 3)
-            ptc('Move hand away', 90, CYAN, 1)
+            cnc('远离!', 50, CYAN)
+            cnc('手远离', 90, CYAN)
     # Timer bar
     rem = max(0, sim['dl']-time.ticks_ms())
     tot = sim['tot']
@@ -76,22 +105,23 @@ def page_game(sim, first):
     # COMBO
     fl(20,195,200,50,DARK)
     cbo=sim['combo']
-    if cbo>=5: cc,cs=RED,3
-    elif cbo>=3: cc,cs=ORANGE,2
-    elif cbo>0: cc,cs=CYAN,1
-    else: cc,cs=DIM,1
-    if cbo>0: ptc('COMBO x'+str(cbo),215,cc,cs)
+    if cbo>=5: cc=RED
+    elif cbo>=3: cc=ORANGE
+    elif cbo>0: cc=CYAN
+    else: cc=DIM
+    if cbo>0: cnc('连击 x'+str(cbo),215,cc)
     # Difficulty
-    fl(5,278,130,18,DARK); pt('DIFF:'+'*'*sim['df'],8,280,DIM,1)
+    fl(5,278,130,18,DARK)
+    cn('难度', 8, 280, DIM); pt(': '+'*'*sim['df'], 8+32, 280, DIM, 1)
 
 def page_result(score, max_combo, q_num, uploaded):
     lcd.fill(DARK)
-    ptc('GAME OVER', 15, WHITE, 3)
-    pt('Score: '+str(score)+' pts', 30, 65, YELLOW, 2)
-    pt('Max COMBO: x'+str(max_combo), 30, 100, ORANGE, 2)
-    pt('Questions: '+str(q_num-1), 30, 135, WHITE, 1)
-    ptc('Uploaded!' if uploaded else 'Offline', 185, GREEN if uploaded else DIM, 1)
-    ptc('STOPPED', 260, DIM, 1)
+    cnc('游戏结束', 15, WHITE)
+    cn('分数', 30, 60, YELLOW); pt(': '+str(score)+' 分', 30+32, 60, YELLOW, 1)
+    cn('最大连击', 30, 85, ORANGE); pt(': x'+str(max_combo), 30+16*4, 85, ORANGE, 1)
+    cn('题数', 30, 110, WHITE); pt(': '+str(q_num-1), 30+32, 110, WHITE, 1)
+    cnc('已上传!' if uploaded else '离线', 185, GREEN if uploaded else DIM)
+    cnc('已停止', 260, DIM)
 
 # ==================== Main ====================
 
