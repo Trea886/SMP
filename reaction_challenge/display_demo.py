@@ -74,7 +74,7 @@ def page_game(sim, first):
     # Top bar
     fl(5,2,235,22,DARK)
     cn('分数', 8, 5, WHITE); pt(': '+str(sim['s']), 8+32, 5, WHITE, 1)
-    cn('题', 180, 5, CYAN); pt(str(sim['q']), 196, 5, CYAN, 1)
+    cn('题', 160, 5, CYAN); pt(str(sim['q'])+'/'+str(sim['total']), 176, 5, CYAN, 1)
     # Question area
     qtype = sim['type']  # 'arrow' or 'dist'
     fl(20,40,200,90,DARK)
@@ -114,14 +114,14 @@ def page_game(sim, first):
     fl(5,278,130,18,DARK)
     cn('难度', 8, 280, DIM); pt(': '+'*'*sim['df'], 8+32, 280, DIM, 1)
 
-def page_result(score, max_combo, q_num, uploaded):
+def page_result(score, max_combo, correct, total, uploaded):
     lcd.fill(DARK)
     cnc('游戏结束', 15, WHITE)
     cn('分数', 30, 60, YELLOW); pt(': '+str(score)+' 分', 30+32, 60, YELLOW, 1)
-    cn('最大连击', 30, 85, ORANGE); pt(': x'+str(max_combo), 30+16*4, 85, ORANGE, 1)
-    cn('题数', 30, 110, WHITE); pt(': '+str(q_num-1), 30+32, 110, WHITE, 1)
-    cnc('已上传!' if uploaded else '离线', 185, GREEN if uploaded else DIM)
-    cnc('已停止', 260, DIM)
+    cn('答题', 30, 90, GREEN); pt(': '+str(correct)+'/'+str(total), 30+32, 90, GREEN, 1)
+    cn('最大连击', 30, 120, ORANGE); pt(': x'+str(max_combo), 30+16*4, 120, ORANGE, 1)
+    cnc('已上传!' if uploaded else '离线', 175, GREEN if uploaded else DIM)
+    cnc('已停止', 240, DIM)
 
 # ==================== Main ====================
 
@@ -132,46 +132,46 @@ def run():
 
     ges_init()
 
+    TOTAL = 20
     state = 'title'
     t = 0; first = True; last_g = ''
 
-    score=0; combo=0; max_combo=0; q_num=1
+    score=0; combo=0; max_combo=0; q_num=0; correct_count=0
     q_type='arrow'; cur_dir='UP'; cur_trap=False; cur_act='FORWARD'
     deadline=0; timeout=4000; grace_end=0; uploaded=False
 
     def new_game():
-        nonlocal score,combo,max_combo,q_num,deadline,grace_end,timeout,uploaded
+        nonlocal score,combo,max_combo,q_num,correct_count,deadline,grace_end,timeout,uploaded
         nonlocal q_type,cur_dir,cur_trap,cur_act
-        score=0;combo=0;max_combo=0;q_num=1;uploaded=False
+        score=0;combo=0;max_combo=0;q_num=0;correct_count=0;uploaded=False
         next_q()
 
     def next_q():
-        nonlocal q_num,deadline,grace_end,timeout
+        nonlocal q_num,deadline,grace_end,timeout,last_g
         nonlocal q_type,cur_dir,cur_trap,cur_act
+        last_g = ''  # Reset so same-direction gesture isn't blocked
         q_num+=1
+        if q_num > TOTAL:
+            return False  # Game over
         # Random: 60% arrow, 40% distance
         q_type = 'arrow' if random.random()<0.6 else 'dist'
         if q_type == 'arrow':
             cur_dir=random.choice(['UP','DOWN','LEFT','RIGHT'])
-            cur_trap=(q_num>=12 and random.random()<.3)
+            cur_trap=(q_num>=8 and random.random()<.5)
         else:
             cur_act=random.choice(['FORWARD','BACK'])
         timeout=max(2000,4000-(q_num//6)*200)
         deadline=time.ticks_ms()+timeout
-        grace_end=time.ticks_ms()+1000
+        grace_end=time.ticks_ms()+500
+        return True
 
     new_game()
-
-    print('========================')
-    print('  RCT - Gesture Final')
-    print('========================')
 
     while True:
         g = read_gesture()
         if g == last_g or g == 'NONE':
             g = 'NONE'
         else:
-            print('[GES]', g)
             last_g = g
 
         # ===== Title =====
@@ -183,7 +183,7 @@ def run():
 
         # ===== Game =====
         elif state == 'game':
-            sim = {'s':score,'q':q_num,'combo':combo,'df':min(5,1+q_num//6)}
+            sim = {'s':score,'q':q_num,'total':TOTAL,'combo':combo,'df':min(5,1+q_num//6)}
             sim['type']=q_type; sim['tot']=timeout; sim['dl']=deadline
 
             if q_type == 'arrow':
@@ -197,7 +197,15 @@ def run():
             rem = deadline - time.ticks_ms()
             in_grace = time.ticks_diff(time.ticks_ms(), grace_end) < 0
 
+            def end_game():
+                nonlocal state,t,first,uploaded
+                state='result'; t=0; first=True
+                if _mqtt:
+                    try: upload_score(score,'gesture',max_combo,340,correct_count); uploaded=True
+                    except: pass
+
             if not in_grace and rem > 0:
+                handled = False
                 if q_type == 'arrow':
                     if g in ('UP','DOWN','LEFT','RIGHT'):
                         correct = (g!=cur_dir) if cur_trap else (g==cur_dir)
@@ -205,12 +213,10 @@ def run():
                             combo+=1
                             if combo>max_combo: max_combo=combo
                             m=[1,1,2,3,5,10]; score+=10*m[min(combo,5)]
-                            next_q(); first=True
+                            correct_count+=1
                         else:
-                            state='result'; t=0; first=True
-                            if _mqtt:
-                                try: upload_score(score,'gesture',max_combo,340,q_num-1); uploaded=True
-                                except: pass
+                            combo=0
+                        handled = True
                 else:  # dist
                     if g in ('FORWARD','BACKWARD'):
                         correct = (g==cur_act)
@@ -218,31 +224,34 @@ def run():
                             combo+=1
                             if combo>max_combo: max_combo=combo
                             m=[1,1,2,3,5,10]; score+=10*m[min(combo,5)]
-                            next_q(); first=True
+                            correct_count+=1
                         else:
-                            state='result'; t=0; first=True
-                            if _mqtt:
-                                try: upload_score(score,'gesture',max_combo,340,q_num-1); uploaded=True
-                                except: pass
+                            combo=0
+                        handled = True
 
-            if rem <= 0:
-                state='result'; t=0; first=True
-                if _mqtt:
-                    try: upload_score(score,'gesture',max_combo,340,q_num-1); uploaded=True
-                    except: pass
+                if handled:
+                    if not next_q():
+                        end_game()
+                    else:
+                        first = True
+
+            if rem <= 0 and state == 'game':
+                combo=0
+                if not next_q():
+                    end_game()
+                else:
+                    first = True
 
         # ===== Result =====
         elif state == 'result':
             if first:
-                page_result(score, max_combo, q_num, uploaded)
+                page_result(score, max_combo, correct_count, TOTAL, uploaded)
             first = False
             if t > 60:
-                print('=== GAME ENDED ===')
                 break  # Stop the loop, game over
 
-        time.sleep_ms(100)
+        time.sleep_ms(40)
         t += 1
 
 
 run()
-print('Program stopped.')
