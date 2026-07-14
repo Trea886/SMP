@@ -188,10 +188,7 @@
 
   <div class="sec">REMOTE CONTROL · 远程控制</div>
   <div class="btns">
-    <button class="btn btn-g" onclick="sendCmd('gesture')">GESTURE 手势</button>
-    <button class="btn btn-s" onclick="sendCmd('sonic')">SONIC 超声波</button>
-    <button class="btn btn-c" onclick="sendCmd('combo')">COMBO 连击</button>
-    <button class="btn btn-x" onclick="sendCmd('back')">MENU 返回</button>
+    <button class="btn btn-g" onclick="sendCmd('gesture')">GESTURE 手势开始</button>
   </div>
   <button class="btn-demo" onclick="injectDemo()">INJECT DEMO DATA · 注入模拟数据</button>
 
@@ -199,8 +196,6 @@
   <div class="tabs">
     <button class="tab active" data-mode="all">ALL 全部</button>
     <button class="tab" data-mode="gesture">GESTURE 手势</button>
-    <button class="tab" data-mode="sonic">SONIC 超声波</button>
-    <button class="tab" data-mode="combo">COMBO 连击</button>
   </div>
   <div class="slist" id="slist"><div style="text-align:center;padding:32px;color:#444">AWAITING DATA...</div></div>
 
@@ -270,7 +265,7 @@ function render(){
   const list=$('slist');
   if(!b.length){list.innerHTML='<div style="text-align:center;padding:32px;color:#444">AWAITING DATA...</div>'}
   else list.innerHTML=b.map((s,i)=>{const rk=i+1,rc=rk===1?'g':rk===2?'s':rk===3?'b':'';
-    const mm={gesture:'GESTURE 手势闪电',sonic:'SONIC 超声波快拍',combo:'COMBO 连击挑战'};
+    const mm={gesture:'GESTURE 手势挑战'};
     const ago=Math.floor((Date.now()-s._t)/1000);
     return'<div class="srow" id="r-'+s._id+'"><div class="r '+rc+'">'+rk+'</div><div class="info"><div class="name">'+esc(s.device)+'</div><div class="meta">'+(mm[s.mode]||s.mode)+' // '+(ago<60?ago+'s':ago<3600?Math.floor(ago/60)+'m':'---')+'</div></div><div class="val"><div class="sc">'+s.score+'</div><div class="cb">'+(s.combo?'x'+s.combo:'')+'</div></div></div>';
   }).join('');
@@ -301,7 +296,7 @@ function setPlayer(){
 
 function injectDemo(){
   const devs2=['ALPHA','BETA','GAMMA','DELTA','NEON','PHOTON'];
-  const modes2=['gesture','sonic','combo'];
+  const modes2=['gesture'];
   for(let i=0;i<15;i++){
     scores.push({device:devs2[Math.floor(Math.random()*6)],score:20+Math.floor(Math.random()*220),mode:modes2[Math.floor(Math.random()*3)],combo:Math.floor(Math.random()*16),_t:Date.now()-Math.floor(Math.random()*600000),_id:Math.random().toString(36).slice(2,6)});
     devs.add(scores[scores.length-1].device);

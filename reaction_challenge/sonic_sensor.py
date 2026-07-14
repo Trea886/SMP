@@ -5,8 +5,8 @@ HC-SR04 超声波 — 安全版（自带超时）
 from machine import Pin
 from time import sleep_us, ticks_us, ticks_diff
 
-TRIG = Pin(8, Pin.OUT)
-ECHO = Pin(9, Pin.IN)
+TRIG = Pin(18, Pin.OUT)
+ECHO = Pin(19, Pin.IN)
 
 def read():
     TRIG.value(0)
