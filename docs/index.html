@@ -191,6 +191,7 @@
     <button class="btn btn-g" onclick="sendCmd('gesture')">GESTURE 手势开始</button>
   </div>
   <button class="btn-demo" onclick="injectDemo()">INJECT DEMO DATA · 注入模拟数据</button>
+  <button class="btn-demo" onclick="setupToken()" id="btnToken" style="display:none">☁️ SETUP CLOUD SYNC · 设置云同步</button>
 
   <div class="sec">RANKINGS · 排行榜</div>
   <div class="tabs">
@@ -213,8 +214,44 @@ const TS='/reaction/score',TC='/reaction/control',TP='/reaction/player';
 const WS=['wss://broker.emqx.io:8084/mqtt','ws://broker.emqx.io:8083/mqtt'];
 let scores=[],mode='all',devs=new Set(),cli,topScore=0,ui=0;
 const MAX_SCORES=100,SK='rct_scores';
+const GIST_ID='758ea61bd10ce385c4be25251178fec1';
+const GIST_RAW='https://gist.githubusercontent.com/Trea886/'+GIST_ID+'/raw/scores.json';
+const GIST_API='https://api.github.com/gists/'+GIST_ID;
+let GH_TOKEN=localStorage.getItem('rct_gh_token')||'';if(!GH_TOKEN){$('btnToken').style.display='inline-block'}
+
+// 1. load from localStorage (instant)
 try{const d=JSON.parse(localStorage.getItem(SK));if(Array.isArray(d)){scores=d;scores.forEach(s=>devs.add(s.device||'?'));topScore=Math.max(0,...scores.map(s=>s.score))}}catch(e){}
-function save(){while(scores.length>MAX_SCORES)scores.shift();try{localStorage.setItem(SK,JSON.stringify(scores))}catch(e){}}
+
+// 2. pull from Gist cloud (async, merges with localStorage)
+(function pull(){
+  fetch(GIST_RAW+'?t='+Date.now()).then(r=>r.json()).then(d=>{
+    if(Array.isArray(d)&&d.length){
+      const all=[...d,...scores];
+      const seen=new Set();
+      scores=all.filter(s=>{const k=s._id;if(seen.has(k))return false;seen.add(k);return true});
+      scores.sort((a,b)=>b.score-a.score);
+      if(scores.length>MAX_SCORES)scores.length=MAX_SCORES;
+      devs=new Set();scores.forEach(s=>devs.add(s.device||'?'));
+      topScore=Math.max(0,...scores.map(s=>s.score));
+      try{localStorage.setItem(SK,JSON.stringify(scores))}catch(e){}
+      render();
+    }
+  }).catch(()=>{});
+})();
+
+function save(){
+  while(scores.length>MAX_SCORES)scores.shift();
+  try{localStorage.setItem(SK,JSON.stringify(scores))}catch(e){}
+  // push to Gist cloud (debounced 3s)
+  if(!GH_TOKEN)return;
+  clearTimeout(save._t);
+  save._t=setTimeout(()=>{
+    fetch(GIST_API,{method:'PATCH',
+      headers:{'Authorization':'token '+GH_TOKEN,'Content-Type':'application/json'},
+      body:JSON.stringify({files:{'scores.json':{content:JSON.stringify(scores)}}})
+    }).catch(()=>{});
+  },3000);
+}
 const $=id=>document.getElementById(id);
 
 // ===== Title: gradient color follows mouse =====
@@ -308,6 +345,10 @@ function injectDemo(){
 }
 
 function showToast(m){const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2300)}
+function setupToken(){
+  const t=prompt('输入 GitHub Token（仅需 gist 权限）:',GH_TOKEN||'');
+  if(t&&t.trim()){GH_TOKEN=t.trim();localStorage.setItem('rct_gh_token',GH_TOKEN);$('btnToken').style.display='none';showToast('☁️ CLOUD SYNC READY')}
+}
 function showFire(c){const e=document.createElement('div');e.className='fire';e.textContent='COMBO x'+c;document.body.appendChild(e);setTimeout(()=>e.remove(),900)}
 function spawnP(n){
   for(let i=0;i<n;i++){
